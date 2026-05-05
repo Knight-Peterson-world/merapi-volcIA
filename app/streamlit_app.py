@@ -18,12 +18,9 @@ Lancement (depuis le dossier merapi_anomaly/) :
 from __future__ import annotations
 
 import os
-# Désactiver l'import TensorFlow dans transformers/diffusers (TF cassé dans conda base).
+# Éviter les imports TF inutiles (accélère le démarrage).
 os.environ.setdefault("USE_TF", "0")
 os.environ.setdefault("USE_TORCH", "1")
-
-# Détection déploiement Render — désactive les sections nécessitant SD/LoRA
-_IS_RENDER = os.environ.get("RENDER_DEPLOYMENT", "0") == "1"
 
 import sys
 from pathlib import Path
@@ -58,20 +55,6 @@ except ImportError:
 
 from src.utils import load_config, get_index_path, parse_filename_datetime
 from src.preprocessing import MerapiPreprocessor
-
-# Imports IA génératifs — désactivés sur Render (SD/LoRA trop lourd, ~4–8 GB)
-if not _IS_RENDER:
-    try:
-        from src.generator import ImageGenerator, _detect_device, check_versions
-        _generator_available = True
-    except Exception:
-        _generator_available = False
-else:
-    _generator_available = False
-    # Stubs pour éviter les NameError dans les fonctions non appelées
-    ImageGenerator = None  # type: ignore[assignment,misc]
-    def _detect_device(): return "cpu"  # type: ignore[misc]
-    def check_versions(): return {}  # type: ignore[misc]
 
 # ----------------------------------------------------------
 # Configuration globale Streamlit
@@ -114,9 +97,8 @@ PAGES = [
     "⚡ Early Warning",                  # [6]
     "🌋 Analyse volcanique avancée",    # [7]
     "🧪 Analyse avancée",               # [8]
-    "🤖 Génération IA",                  # [9]
-    "🌋 Simulation écoulements",         # [10]
-    "📖 À propos",                       # [11] ← TOUJOURS EN DERNIER
+    "🌋 Simulation écoulements",         # [9]
+    "📖 À propos",                       # [10] ← TOUJOURS EN DERNIER
 ]
 
 
@@ -783,10 +765,10 @@ def page_accueil(df: pd.DataFrame) -> None:
     # ──────────────────────────────────────────────────────────────────────
     with tab_global:
         st.subheader("📊 Images par année")
+        # Toujours rendre st.plotly_chart — figure vide annotée si pas de données (anti-removeChild)
         if df["year"].notna().any():
             year_counts = df.groupby("year").size().reset_index(name="count")
             year_counts["year"] = year_counts["year"].astype(int)
-            # Plotly interactif pour le bar chart principal
             fig_yr = go.Figure(go.Bar(
                 x=year_counts["year"].tolist(),
                 y=year_counts["count"].tolist(),
@@ -802,13 +784,22 @@ def page_accueil(df: pd.DataFrame) -> None:
                 margin=dict(l=0, r=0, t=20, b=40),
                 bargap=0.25,
             )
-            st.plotly_chart(fig_yr, use_container_width=True, key="accueil_bar_year")
         else:
-            st.info("Aucune donnée temporelle disponible.")
+            fig_yr = go.Figure()
+            fig_yr.add_annotation(
+                text="Aucune donnée temporelle disponible",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font=dict(size=14, color="gray"),
+            )
+            fig_yr.update_layout(height=380, xaxis_visible=False, yaxis_visible=False,
+                                 margin=dict(l=0, r=0, t=20, b=40))
+        st.plotly_chart(fig_yr, use_container_width=True, key="accueil_bar_year")
 
     # ──────────────────────────────────────────────────────────────────────
     with tab_time:
         st.subheader("Distribution temporelle")
+        # Toujours rendre st.pyplot — figure annotée si pas de données (anti-removeChild)
+        fig, ax = plt.subplots(figsize=(14, 4))
         if df["year"].notna().any():
             year_month = df.groupby(["year", "month"]).size().reset_index(name="count")
             year_month["year"] = year_month["year"].astype(int)
@@ -816,7 +807,6 @@ def page_accueil(df: pd.DataFrame) -> None:
             year_month["label"] = year_month.apply(
                 lambda r: f"{int(r['year'])}-{int(r['month']):02d}", axis=1
             )
-            fig, ax = plt.subplots(figsize=(14, 4))
             ax.bar(range(len(year_month)), year_month["count"], color="#3498db", edgecolor="white", width=0.8)
             ax.set_xlabel("Mois")
             ax.set_ylabel("Images")
@@ -826,23 +816,30 @@ def page_accueil(df: pd.DataFrame) -> None:
             ax.set_xticklabels(
                 [year_month["label"].iloc[i] for i in tick_idx], rotation=45, fontsize=7
             )
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
         else:
-            st.info("Aucune donnée temporelle disponible.")
+            ax.text(0.5, 0.5, "Aucune donnée temporelle disponible",
+                    ha="center", va="center", transform=ax.transAxes, fontsize=12, color="gray")
+            ax.set_axis_off()
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
 
+        # Distribution horaire — toujours rendre st.pyplot (anti-removeChild)
+        fig_hr, ax_hr = plt.subplots(figsize=(10, 3))
         if df["hour"].notna().any():
             hour_counts = df.groupby("hour").size()
-            fig, ax = plt.subplots(figsize=(10, 3))
-            ax.bar(hour_counts.index.astype(int), hour_counts.values, color="#2ecc71", edgecolor="white")
-            ax.set_xlabel("Heure UTC")
-            ax.set_ylabel("Images")
-            ax.set_title("Distribution horaire")
-            ax.set_xticks(range(0, 24))
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
+            ax_hr.bar(hour_counts.index.astype(int), hour_counts.values, color="#2ecc71", edgecolor="white")
+            ax_hr.set_xlabel("Heure UTC")
+            ax_hr.set_ylabel("Images")
+            ax_hr.set_title("Distribution horaire")
+            ax_hr.set_xticks(range(0, 24))
+        else:
+            ax_hr.text(0.5, 0.5, "Aucune donnée horaire disponible",
+                       ha="center", va="center", transform=ax_hr.transAxes, fontsize=12, color="gray")
+            ax_hr.set_axis_off()
+        plt.tight_layout()
+        st.pyplot(fig_hr)
+        plt.close(fig_hr)
 
     # ──────────────────────────────────────────────────────────────────────
     with tab_quality:
@@ -850,12 +847,14 @@ def page_accueil(df: pd.DataFrame) -> None:
             "usable": "#2ecc71", "dark": "#34495e",
             "cloudy": "#95a5a6", "corrupted": "#e74c3c", "unknown": "#f39c12",
         }
-        if df["quality_flag"].notna().any():
-            col_qp, col_qy = st.columns(2)
-            with col_qp:
-                st.subheader("Distribution qualité")
+        # Toujours rendre st.columns(2) — figures annotées si pas de données (anti-removeChild)
+        _has_quality = df["quality_flag"].notna().any()
+        col_qp, col_qy = st.columns(2)
+        with col_qp:
+            st.subheader("Distribution qualité")
+            fig, ax = plt.subplots(figsize=(6, 4))
+            if _has_quality:
                 qcounts = df["quality_flag"].value_counts()
-                fig, ax = plt.subplots(figsize=(6, 4))
                 bars = ax.bar(
                     qcounts.index, qcounts.values,
                     color=[_colors_q.get(q, "#3498db") for q in qcounts.index],
@@ -868,14 +867,19 @@ def page_accueil(df: pd.DataFrame) -> None:
                     )
                 ax.set_ylabel("Nombre d'images")
                 ax.set_title("Qualité globale")
-                plt.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
+            else:
+                ax.text(0.5, 0.5, "Classification qualité\nnon disponible",
+                        ha="center", va="center", transform=ax.transAxes, fontsize=11, color="gray")
+                ax.set_axis_off()
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
 
-            with col_qy:
-                st.subheader("Qualité par année")
+        with col_qy:
+            st.subheader("Qualité par année")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            if _has_quality and df["year"].notna().any():
                 cross = pd.crosstab(df["year"].dropna().astype(int), df["quality_flag"])
-                fig, ax = plt.subplots(figsize=(8, 4))
                 cross.plot(
                     kind="bar", stacked=True, ax=ax,
                     color=[_colors_q.get(c, "#3498db") for c in cross.columns],
@@ -884,11 +888,13 @@ def page_accueil(df: pd.DataFrame) -> None:
                 ax.set_ylabel("Nombre d'images")
                 ax.set_title("Qualité par année")
                 ax.legend(fontsize=8, bbox_to_anchor=(1, 1))
-                plt.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
-        else:
-            st.info("Classification qualité non encore effectuée (Phase 3 du pipeline).")
+            else:
+                ax.text(0.5, 0.5, "Données insuffisantes",
+                        ha="center", va="center", transform=ax.transAxes, fontsize=11, color="gray")
+                ax.set_axis_off()
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
 
         st.markdown("---")
         st.subheader("Tailles de fichiers")
@@ -897,8 +903,9 @@ def page_accueil(df: pd.DataFrame) -> None:
             if "file_size_bytes" in df.columns
             else pd.Series(dtype=float)
         )
+        # Toujours rendre st.pyplot + st.columns(3) + métriques (anti-removeChild)
+        fig, ax = plt.subplots(figsize=(10, 3))
         if not _sizes.empty:
-            fig, ax = plt.subplots(figsize=(10, 3))
             ax.hist(_sizes / 1024, bins=50, edgecolor="white", alpha=0.8, color="#9b59b6")
             ax.set_xlabel("Taille (Ko)")
             ax.set_ylabel("Fréquence")
@@ -907,15 +914,17 @@ def page_accueil(df: pd.DataFrame) -> None:
             )
             ax.axvline(_sizes.mean() / 1024, color="red", ls="--", label="Moyenne")
             ax.legend(fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-            cs1, cs2, cs3 = st.columns(3)
-            cs1.metric("Taille totale", f"{_sizes.sum() / 1e6:.1f} Mo")
-            cs2.metric("Taille moyenne", f"{_sizes.mean() / 1024:.0f} Ko")
-            cs3.metric("Taille max", f"{_sizes.max() / 1024:.0f} Ko")
         else:
-            st.info("Pas de données de taille de fichier.")
+            ax.text(0.5, 0.5, "Pas de données de taille de fichier",
+                    ha="center", va="center", transform=ax.transAxes, fontsize=12, color="gray")
+            ax.set_axis_off()
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+        cs1, cs2, cs3 = st.columns(3)
+        cs1.metric("Taille totale",   f"{_sizes.sum() / 1e6:.1f} Mo"   if not _sizes.empty else "—")
+        cs2.metric("Taille moyenne",  f"{_sizes.mean() / 1024:.0f} Ko" if not _sizes.empty else "—")
+        cs3.metric("Taille max",      f"{_sizes.max() / 1024:.0f} Ko"  if not _sizes.empty else "—")
 
         st.markdown("---")
         st.subheader("Progression du pipeline")
@@ -1037,7 +1046,8 @@ def page_accueil(df: pd.DataFrame) -> None:
                     "```bash\npython run_v1_pipeline.py --step patchcore\n```"
                 )
         else:
-            st.info("Aucune donnée temporelle disponible.")
+            # Toujours rendre un placeholder (anti-removeChild)
+            st.caption("Aucune donnée temporelle disponible pour calculer la couverture.")
 
     # ──────────────────────────────────────────────────────────────────────
     with tab_insights:
@@ -1089,18 +1099,19 @@ def page_exploration(df: pd.DataFrame, config: dict) -> None:
 
     st.header(f"🔍 Exploration — {sel_year}/{sel_month:02d}")
 
-    if df_filt.empty:
-        st.info("Aucune image pour cette sélection.")
-        return
+    # Toujours rendre le squelette UI — values = 0 si pas de données (anti-removeChild)
+    _expl_has_data = not df_filt.empty
 
     # Résumé rapide — conteneur stable pour éviter le NotFoundError
     metrics_container = st.container()
     with metrics_container:
         c1, c2, c3 = st.columns(3)
-        c1.metric("Images", len(df_filt))
-        c2.metric("Téléchargées", int(df_filt["downloaded"].sum()))
-        scored = int(df_filt["anomaly_score"].notna().sum())
+        c1.metric("Images", len(df_filt) if _expl_has_data else 0)
+        c2.metric("Téléchargées", int(df_filt["downloaded"].sum()) if _expl_has_data else 0)
+        scored = int(df_filt["anomaly_score"].notna().sum()) if _expl_has_data else 0
         c3.metric("Avec score", scored)
+    if not _expl_has_data:
+        st.caption("Aucune image pour cette sélection — modifiez les filtres.")
 
     # Table de données
     st.subheader("📋 Index des images")
@@ -1116,11 +1127,12 @@ def page_exploration(df: pd.DataFrame, config: dict) -> None:
 
     # Couverture temporelle
     st.subheader("🗓️ Couverture temporelle")
+    # Toujours rendre st.pyplot — figure annotée si données insuffisantes (anti-removeChild)
+    fig, ax = plt.subplots(figsize=(14, 4))
     if df_filt["day"].notna().any() and df_filt["hour"].notna().any():
         pivot = df_filt.pivot_table(
             index="hour", columns="day", values="filename", aggfunc="count"
         )
-        fig, ax = plt.subplots(figsize=(14, 4))
         if sns is not None:
             sns.heatmap(
                 pivot, cmap="Blues", linewidths=0.3, ax=ax, annot=True, fmt=".0f",
@@ -1131,11 +1143,13 @@ def page_exploration(df: pd.DataFrame, config: dict) -> None:
         ax.set_title(f"Couverture jour × heure — {sel_year}/{sel_month:02d}")
         ax.set_xlabel("Jour du mois")
         ax.set_ylabel("Heure (UTC)")
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
     else:
-        st.info("Données temporelles insuffisantes.")
+        ax.text(0.5, 0.5, "Données temporelles (jour / heure) insuffisantes",
+                ha="center", va="center", transform=ax.transAxes, fontsize=12, color="gray")
+        ax.set_axis_off()
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
     # Export CSV
     st.markdown("---")
@@ -1145,6 +1159,107 @@ def page_exploration(df: pd.DataFrame, config: dict) -> None:
         file_name=f"merapi_{sel_year}_{sel_month:02d}.csv",
         mime="text/csv",
     )
+
+
+# ==============================================================
+# Page 2 — Galerie temporelle
+# ==============================================================
+
+def page_galerie(df: pd.DataFrame, config: dict) -> None:
+    sel_year, sel_month, df_filt = sidebar_data_filters(df)
+
+    st.header(f"🖼️ Galerie temporelle — {sel_year}/{sel_month:02d}")
+
+    if df_filt.empty:
+        st.info("Aucune image pour cette sélection.")
+        return
+
+    df_sorted = df_filt.sort_values(["day", "hour", "minute"]).reset_index(drop=True)
+
+    # Navigation
+    col_nav, col_info = st.columns([3, 1])
+    with col_nav:
+        idx_sel = st.slider(
+            "Navigation", 0, max(0, len(df_sorted) - 1), 0,
+            format=f"Image %d / {len(df_sorted)}",
+        )
+    with col_info:
+        row = df_sorted.iloc[idx_sel]
+        day_v = int(row["day"]) if pd.notna(row.get("day")) else "?"
+        hour_v = int(row["hour"]) if pd.notna(row.get("hour")) else "?"
+        st.metric("Date", f"Jour {day_v}, {hour_v}h")
+
+    img_path_gal = find_image_path(row)
+
+    # Affichage côte à côte
+    col_raw, col_proc = st.columns(2)
+
+    with col_raw:
+        st.markdown("**📷 Image disponible**")
+        img_raw = load_image_for_display(img_path_gal) if img_path_gal is not None else None
+        if img_raw is not None:
+            st.image(img_raw, **{_IMG_WIDTH_KW: True})
+            st.caption(f"`{img_path_gal.name}`")
+        else:
+            _gal_fn = row.get("filename", "?")
+            _gal_dl = bool(row.get("downloaded", False))
+            if not _gal_dl:
+                st.warning(
+                    f"⬇️ Non téléchargée : `{_gal_fn}`\n\n"
+                    "Relancez : `python run_full_pipeline.py --step download`"
+                )
+            else:
+                _gal_y = int(row.get("year", 0)) if pd.notna(row.get("year")) else 0
+                _gal_m = int(row.get("month", 0)) if pd.notna(row.get("month")) else 0
+                st.warning(f"⚠️ Fichier absent du disque : `{_gal_fn}`")
+                if _gal_y and _gal_m:
+                    with st.expander("🔍 Chemins vérifiés", expanded=False):
+                        for _gp in [
+                            PROJECT_ROOT / "data" / "raw" / str(_gal_y) / f"{_gal_m:02d}" / _gal_fn,
+                            PROJECT_ROOT / "data" / "processed" / str(_gal_y) / f"{_gal_m:02d}" / Path(_gal_fn).with_suffix(".png").name,
+                        ]:
+                            _icon = "OK" if _gp.exists() else "ABSENT"
+                            st.code(f"[{_icon}] {_gp}")
+
+    with col_proc:
+        st.markdown("**🟢 Version prétraitée (PNG)**")
+        proc_img = None
+        try:
+            y, m = int(row["year"]), int(row["month"])
+            stem = Path(str(row["filename"])).stem
+            proc_png = PROJECT_ROOT / "data" / "processed" / str(y) / f"{m:02d}" / f"{stem}.png"
+            if proc_png.exists():
+                proc_img = load_image_for_display(proc_png)
+        except (ValueError, TypeError, KeyError):
+            pass
+        if proc_img is not None:
+            st.image(proc_img, clamp=True, **{_IMG_WIDTH_KW: True})
+        else:
+            st.info("Pas de version prétraitée (PNG)")
+
+    # Métadonnées
+    with st.expander("📋 Métadonnées complètes", expanded=False):
+        meta_cols = ["filename", "url", "day", "hour", "minute", "second",
+                     "quality_flag", "is_night", "anomaly_score", "file_size_bytes"]
+        meta = {c: row.get(c, "—") for c in meta_cols if c in row.index}
+        st.json(meta)
+
+    # Navigation rapide
+    st.markdown("---")
+    if len(df_sorted) > 1:
+        n_thumb = min(10, len(df_sorted))
+        st.markdown(f"**Aperçu rapide** (premières {n_thumb} images)")
+        thumb_cols = st.columns(n_thumb)
+        for i, (_, r) in enumerate(df_sorted.head(n_thumb).iterrows()):
+            _rp = find_image_path(r)
+            img = load_image_for_display(_rp) if _rp is not None else None
+            with thumb_cols[i]:
+                if img is not None:
+                    d = int(r["day"]) if pd.notna(r.get("day")) else "?"
+                    h = int(r["hour"]) if pd.notna(r.get("hour")) else "?"
+                    st.image(img, caption=f"j{d} {h}h", **{_IMG_WIDTH_KW: True})
+                else:
+                    st.text("—")
 
 
 # ==============================================================
@@ -1484,560 +1599,20 @@ météorologiques.
                 height=380,
                 margin=dict(t=50, b=40),
             )
-            st.plotly_chart(fig_hm, use_container_width=True, key="anom_heatmap_plotly")
         else:
-            st.info("Données temporelles (jour / heure) insuffisantes pour la heatmap.")
+            fig_hm = go.Figure()
+            fig_hm.add_annotation(
+                text="Données temporelles (jour / heure) insuffisantes pour la heatmap",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font=dict(size=13, color="gray"),
+            )
+            fig_hm.update_layout(height=380, xaxis_visible=False, yaxis_visible=False,
+                                 margin=dict(t=50, b=40))
+        st.plotly_chart(fig_hm, use_container_width=True, key="anom_heatmap_plotly")
 
 
 # ==============================================================
-# Page 4 — Galerie temporelle
-# ==============================================================
-
-def page_galerie(df: pd.DataFrame, config: dict) -> None:
-    sel_year, sel_month, df_filt = sidebar_data_filters(df)
-
-    st.header(f"🖼️ Galerie temporelle — {sel_year}/{sel_month:02d}")
-
-    if df_filt.empty:
-        st.info("Aucune image pour cette sélection.")
-        return
-
-    df_sorted = df_filt.sort_values(["day", "hour", "minute"]).reset_index(drop=True)
-
-    # Navigation
-    col_nav, col_info = st.columns([3, 1])
-    with col_nav:
-        idx_sel = st.slider(
-            "Navigation", 0, max(0, len(df_sorted) - 1), 0,
-            format=f"Image %d / {len(df_sorted)}",
-        )
-    with col_info:
-        row = df_sorted.iloc[idx_sel]
-        day_v = int(row["day"]) if pd.notna(row.get("day")) else "?"
-        hour_v = int(row["hour"]) if pd.notna(row.get("hour")) else "?"
-        st.metric("Date", f"Jour {day_v}, {hour_v}h")
-
-    img_path_gal = find_image_path(row)
-
-    # Affichage côte à côte
-    col_raw, col_proc = st.columns(2)
-
-    with col_raw:
-        st.markdown("**📷 Image disponible**")
-        img_raw = load_image_for_display(img_path_gal) if img_path_gal is not None else None
-        if img_raw is not None:
-            st.image(img_raw, **{_IMG_WIDTH_KW: True})
-            st.caption(f"`{img_path_gal.name}`")
-        else:
-            _gal_fn = row.get("filename", "?")
-            _gal_dl = bool(row.get("downloaded", False))
-            if not _gal_dl:
-                st.warning(
-                    f"⬇️ Non téléchargée : `{_gal_fn}`\n\n"
-                    "Relancez : `python run_full_pipeline.py --step download`"
-                )
-            else:
-                _gal_y = int(row.get("year", 0)) if pd.notna(row.get("year")) else 0
-                _gal_m = int(row.get("month", 0)) if pd.notna(row.get("month")) else 0
-                st.warning(f"⚠️ Fichier absent du disque : `{_gal_fn}`")
-                if _gal_y and _gal_m:
-                    with st.expander("🔍 Chemins vérifiés", expanded=False):
-                        for _gp in [
-                            PROJECT_ROOT / "data" / "raw" / str(_gal_y) / f"{_gal_m:02d}" / _gal_fn,
-                            PROJECT_ROOT / "data" / "processed" / str(_gal_y) / f"{_gal_m:02d}" / Path(_gal_fn).with_suffix(".png").name,
-                        ]:
-                            _icon = "OK" if _gp.exists() else "ABSENT"
-                            st.code(f"[{_icon}] {_gp}")
-
-    with col_proc:
-        st.markdown("**🟢 Version prétraitée (PNG)**")
-        proc_img = None
-        try:
-            y, m = int(row["year"]), int(row["month"])
-            stem = Path(str(row["filename"])).stem
-            proc_png = PROJECT_ROOT / "data" / "processed" / str(y) / f"{m:02d}" / f"{stem}.png"
-            if proc_png.exists():
-                proc_img = load_image_for_display(proc_png)
-        except (ValueError, TypeError, KeyError):
-            pass
-        if proc_img is not None:
-            st.image(proc_img, clamp=True, **{_IMG_WIDTH_KW: True})
-        else:
-            st.info("Pas de version prétraitée (PNG)")
-
-    # Métadonnées
-    with st.expander("📋 Métadonnées complètes", expanded=False):
-        meta_cols = ["filename", "url", "day", "hour", "minute", "second",
-                     "quality_flag", "is_night", "anomaly_score", "file_size_bytes"]
-        meta = {c: row.get(c, "—") for c in meta_cols if c in row.index}
-        st.json(meta)
-
-    # Navigation rapide
-    st.markdown("---")
-    if len(df_sorted) > 1:
-        n_thumb = min(10, len(df_sorted))
-        st.markdown(f"**Aperçu rapide** (premières {n_thumb} images)")
-        thumb_cols = st.columns(n_thumb)
-        for i, (_, r) in enumerate(df_sorted.head(n_thumb).iterrows()):
-            _rp = find_image_path(r)
-            img = load_image_for_display(_rp) if _rp is not None else None
-            with thumb_cols[i]:
-                if img is not None:
-                    d = int(r["day"]) if pd.notna(r.get("day")) else "?"
-                    h = int(r["hour"]) if pd.notna(r.get("hour")) else "?"
-                    st.image(img, caption=f"j{d} {h}h", **{_IMG_WIDTH_KW: True})
-                else:
-                    st.text("—")
-
-
-# ==============================================================
-# Page 5 — Génération IA
-# ==============================================================
-
-def page_generation_ia() -> None:
-    st.header("🤖 Génération d'images par IA — Prototype")
-
-    # Guard Render : Stable Diffusion + LoRA nécessitent 4–8 GB RAM et un GPU.
-    # Le déploiement sur Render (CPU, 2 GB max) ne peut pas les charger.
-    if _IS_RENDER or not _generator_available:
-        st.warning(
-            "⚠️ **Module non disponible en déploiement cloud.**\n\n"
-            "La génération par Stable Diffusion / LoRA nécessite :\n"
-            "- Un GPU (CUDA ou Apple MPS)\n"
-            "- 4–8 GB de RAM GPU\n\n"
-            "Pour utiliser ce module, lancez l'application **localement** :\n"
-            "```bash\n"
-            "USE_TF=0 USE_TORCH=1 python -m streamlit run app/streamlit_app.py\n"
-            "```"
-        )
-        return
-
-    st.markdown(
-        "Module complémentaire de génération visuelle pour la volcanologie. "
-        "Les images générées servent d'**illustration et d'aide à la communication**, "
-        "pas de données scientifiques d'entraînement."
-    )
-
-    # --- Détection matériel ---
-    device = _detect_device()
-    device_labels = {"mps": "🍎 Apple Silicon (MPS)", "cuda": "🟢 NVIDIA (CUDA)", "cpu": "🔵 CPU"}
-
-    # --- Vérification versions ---
-    versions = check_versions()
-    version_ok = all(v != "NOT INSTALLED" for v in [versions.get("torch", ""), versions.get("diffusers", "")])
-    if not version_ok:
-        missing = [k for k, v in versions.items() if v == "NOT INSTALLED"]
-        st.error(
-            f"**Dépendances manquantes** : {', '.join(missing)}\n\n"
-            "Activez votre environnement virtuel et lancez :\n"
-            "```\npip install -r requirements.txt\n```"
-        )
-
-    # Alerte transformers 5.x (incompatible avec diffusers)
-    tf_ver = versions.get("transformers", "0")
-    if tf_ver != "NOT INSTALLED" and tf_ver.startswith("5"):
-        st.error(
-            f"**transformers {tf_ver} détecté — INCOMPATIBLE.**\n\n"
-            "`transformers>=5.0` casse les imports de `diffusers` (bug Placeholder/LazyModule).\n"
-            "Corrigez avec : `pip install 'transformers>=4.44,<5'`"
-        )
-
-    # --- Initialiser le générateur ---
-    if "img_generator" not in st.session_state:
-        st.session_state.img_generator = ImageGenerator()
-    gen: ImageGenerator = st.session_state.img_generator
-    backends = gen.available_backends()
-
-    # --- Bandeau d'état ---
-    if not backends:
-        st.warning(
-            "**Aucun backend de génération disponible.**\n\n"
-            "Pour activer la génération, installez les dépendances depuis le bon env :\n"
-            "```\npip install -r requirements.txt\n```\n\n"
-            "Ou pour DALL·E 3 (API cloud, ~0.04 $/image) :\n"
-            "```\npip install openai\nexport OPENAI_API_KEY='sk-...'\n```"
-        )
-    else:
-        backend_labels = {"diffusers": "🖥️ Diffusers (local)", "openai": "☁️ OpenAI DALL·E 3"}
-        status_parts = [backend_labels.get(b, b) for b in backends]
-        st.success(
-            f"**Device** : {device_labels.get(device, device)}  ·  "
-            f"**Backends** : {' · '.join(status_parts)}"
-        )
-
-    # Avertissement selon device
-    if device == "cuda":
-        st.success(
-            "🟢 **GPU NVIDIA détecté** — Inférence rapide (~5-10s / image). "
-            "Entraînement LoRA recommandé : `python train_lora_physics.py --epochs 50 --fp16`"
-        )
-    elif device == "mps":
-        st.info(
-            "💡 **Mac M1 détecté** — Résolution max recommandée : **512×512**, "
-            "mode **Rapide** (15 steps). SDXL est désactivé (trop lourd pour MPS). "
-            "Premier chargement du modèle ≈ 30-60 s (téléchargement ~5 Go). "
-            "Si MPS manque de mémoire, le système bascule **automatiquement sur CPU** (plus lent). "
-            "Pour l'entraînement LoRA, utilisez un GPU externe (Google Colab ou PC dédié)."
-        )
-
-    # --- Expander : diagnostic versions ---
-    with st.expander("🔧 Diagnostic environnement", expanded=False):
-        diag_cols = st.columns(len(versions))
-        for col, (pkg, ver) in zip(diag_cols, versions.items()):
-            status = "✅" if ver != "NOT INSTALLED" else "❌"
-            col.metric(pkg, ver if ver != "NOT INSTALLED" else "—", delta=status,
-                        delta_color="normal" if ver != "NOT INSTALLED" else "inverse")
-        st.caption(f"Device actif : **{device}** · Python : {versions.get('python', '?')}")
-
-    # --- Détection LoRA partagée (utilisée dans tab_prompt ET tab_params) ---
-    _project_gen = Path(__file__).resolve().parent.parent
-    _lora_candidates_shared = [
-        _project_gen / "outputs" / "lora_merapi_physics" / "lora_merapi_physics_final",
-        _project_gen / "outputs" / "lora_merapi_physics_results" / "lora_merapi_physics_final",
-        _project_gen / "outputs" / "lora_merapi_results" / "lora_merapi_final",
-    ]
-    _shared_lora_path = None
-    for _lp in _lora_candidates_shared:
-        if _lp.exists():
-            _shared_lora_path = _lp
-            break
-
-    tab_prompt, tab_params, tab_compare = st.tabs([
-        "💬 Texte → Image", "⚙️ Paramètres physiques", "🔬 Comparaison VAE vs Diffusion"
-    ])
-
-    # --- Tab 1 : Prompt textuel ---
-    with tab_prompt:
-        st.subheader("Génération text-to-image — caméra Kalor, Merapi 2014–2020")
-        st.caption(
-            "Générez des images volcaniques via un prompt texte libre. "
-            "Le LoRA fine-tuné sur le Merapi peut être activé pour un rendu plus réaliste."
-        )
-
-        # Prompts calqués sur les objectifs scientifiques du projet
-        examples = [
-            "Cratère du Merapi avec effondrement progressif du flanc, caméra Kalor, lumière diurne, septembre 2020",
-            "Écoulement pyroclastique rapide sur le versant sud-ouest du Merapi, fumée dense, caméra de surveillance",
-            "Coulée de lave basaltique incandescente sur le Merapi, pente 30°, nuit, activité effusive",
-            "Nuage météorologique épais devant le cratère du Merapi (à distinguer d'un panache volcanique)",
-            "Zone active avec dôme de lave en croissance, incandescence en sommet, surveillance BPPTKG",
-            "Variation topographique du cratère Merapi entre deux observations, caméra Kalor",
-            "Activité normale du Merapi : cratère stable, légère fumée blanche, journée dégagée",
-        ]
-
-        selected_example = st.selectbox("Exemples de prompts (objectifs scientifiques)", ["(personnalisé)"] + examples)
-        if selected_example != "(personnalisé)":
-            prompt = st.text_area("Prompt", value=selected_example, height=100)
-        else:
-            prompt = st.text_area("Prompt", placeholder="Décrivez la scène volcanique (ex: coulée de lave, effondrement du cratère…)", height=100)
-
-        # --- Option LoRA text-to-image ---
-        col_lora_toggle, col_lora_info = st.columns([1, 3])
-        with col_lora_toggle:
-            use_lora_t2i = st.checkbox(
-                "🔧 Activer LoRA volcanique",
-                value=(_shared_lora_path is not None),
-                disabled=(_shared_lora_path is None),
-                help="Utilise le LoRA fine-tuné sur les images Merapi pour un rendu plus réaliste",
-            )
-        with col_lora_info:
-            if _shared_lora_path:
-                st.success(f"LoRA disponible : `{_shared_lora_path.name}`")
-            else:
-                st.info("Pas de LoRA détecté — génération avec SD 1.5 vanilla. Entraînez avec `python train_lora_physics.py --epochs 50 --fp16`")
-
-        # --- Modèles disponibles selon device ---
-        model_options = []
-        if "diffusers" in backends:
-            all_models = gen.diffusers_model_options()
-            model_options += [m for m in all_models if "gated" not in m.lower()]
-        if "openai" in backends:
-            model_options += ["DALL·E 3 (API)"]
-        if not model_options:
-            model_options = ["Stable Diffusion 1.5", "DALL·E 3 (API)"]
-
-        if device == "mps":
-            st.caption(
-                "ℹ️ **Stable Diffusion 1.5** est le seul modèle disponible publiquement "
-                "sans authentification HuggingFace. SD 2.1 et SDXL sont désactivés (gated / trop lourd)."
-            )
-
-        col_model, col_size = st.columns(2)
-        with col_model:
-            model_choice = st.selectbox("Modèle", model_options)
-        with col_size:
-            # Résolutions adaptées au device
-            if device == "mps":
-                res_options = ["512×512", "384×384"]
-                res_help = "512×512 recommandé sur Mac M1 (float16, ~4 Go)"
-            else:
-                res_options = ["512×512", "768×768", "1024×1024"]
-                res_help = None
-            img_size = st.selectbox("Résolution", res_options, help=res_help)
-
-        # Mode rapide / qualité
-        col_mode, col_guidance = st.columns(2)
-        with col_mode:
-            quality_mode = st.radio(
-                "Mode", ["⚡ Rapide", "🎨 Qualité"],
-                horizontal=True,
-                help="Rapide = 15 steps (≈ 45s sur M1 float16), Qualité = 30 steps (≈ 90s)",
-            )
-            n_steps = 15 if quality_mode == "⚡ Rapide" else 30
-        with col_guidance:
-            guidance = st.slider("Guidance scale", 3.0, 15.0, 7.5, 0.5,
-                                 help="7-8 = équilibré, >10 = très fidèle au prompt")
-
-        with st.expander("Paramètres avancés"):
-            n_steps = st.slider("Étapes (override)", 10, 50, n_steps,
-                                help="Plus d'étapes = meilleure qualité mais plus lent")
-            use_seed = st.checkbox("Graine fixe (reproductibilité)", key="gen_use_seed")
-            # number_input toujours rendu (disabled) — évite removeChild React
-            seed_val_input = st.number_input("Graine", value=42, disabled=not use_seed, key="gen_seed_val")
-            seed_val = int(seed_val_input) if use_seed else None
-
-        generate_btn = st.button(
-            "🎨 Générer l'image", type="primary", use_container_width=True,
-            disabled=(not prompt.strip()),
-        )
-
-        if generate_btn:
-            if not backends:
-                st.error("Aucun backend installé. Voir les instructions ci-dessus.")
-            else:
-                time_msg = "~20-30s" if device == "mps" else "~5-10s" if device == "cuda" else "~2-3 min"
-                lora_hint = " + LoRA volcanique" if (use_lora_t2i and _shared_lora_path) else ""
-                with st.spinner(f"Génération en cours{lora_hint}… (estimé : {time_msg})"):
-                    try:
-                        # Charger LoRA si demandé
-                        if use_lora_t2i and _shared_lora_path and "diffusers" in backends:
-                            gen._diffusers._load_pipeline("Stable Diffusion 1.5")
-                            gen._diffusers.load_lora(_shared_lora_path)
-                        elif not use_lora_t2i and gen._diffusers._lora_loaded:
-                            gen._diffusers.unload_lora()
-
-                        img = gen.generate(
-                            prompt=prompt,
-                            backend="auto",
-                            model_name=model_choice,
-                            resolution=img_size,
-                            num_inference_steps=n_steps,
-                            guidance_scale=guidance,
-                            seed=seed_val,
-                        )
-                        st.image(img, caption=f"{prompt[:80]}…", **{_IMG_WIDTH_KW: True})
-
-                        # Sauvegarder
-                        save_dir = PROJECT_ROOT / "outputs" / "generated"
-                        save_dir.mkdir(parents=True, exist_ok=True)
-                        import hashlib, time as _time
-                        ts = int(_time.time())
-                        h = hashlib.md5(prompt.encode()).hexdigest()[:8]
-                        save_path = save_dir / f"gen_{ts}_{h}.png"
-                        img.save(str(save_path))
-                        st.caption(f"Sauvegardée : `{save_path.relative_to(PROJECT_ROOT)}`")
-
-                    except RuntimeError as e:
-                        err_msg = str(e)
-                        if "MPS" in err_msg or "mps" in err_msg or "memory" in err_msg.lower():
-                            st.error(
-                                f"**Mémoire insuffisante (même après fallback CPU).**\n\n"
-                                f"Réduisez la résolution à 384×384 ou fermez d'autres applications.\n\n"
-                                f"Détail : {err_msg}"
-                            )
-                        else:
-                            st.error(f"Erreur de génération :\n\n{e}")
-                    except Exception as e:
-                        st.error(f"Erreur inattendue : {type(e).__name__} — {e}")
-
-    # --- Tab 2 : Paramètres physiques (LoRA physics-conditionné) ---
-    with tab_params:
-        st.subheader("Génération par paramètres physiques")
-        st.markdown(
-            "Pilotez la génération d'images du Merapi par des paramètres "
-            "physiques réels. Chaque paramètre influence visuellement l'image "
-            "via des prompts en langage naturel riche (v2)."
-        )
-
-        # Utiliser la variable LoRA détectée plus haut (partagée avec tab_prompt)
-        _lora_path = _shared_lora_path
-
-        if _lora_path:
-            st.success(f"✅ LoRA volcanique détecté : `{_lora_path.name}`")
-        else:
-            st.warning(
-                "⚠️ Aucun LoRA physics trouvé. La génération utilisera SD 1.5 "
-                "vanilla. Entraînez avec `python train_lora_physics.py`."
-            )
-
-        # --- Paramètres physiques ---
-        col_p1, col_p2, col_p3 = st.columns(3)
-        with col_p1:
-            st.markdown("**🌋 Observation**")
-            camera = st.selectbox("📷 Caméra", [
-                "Suki", "Kalor", "Kali",
-            ], help="Station de surveillance BPPTKG")
-            time_of_day = st.selectbox("🕐 Moment", [
-                "early_morning", "midday", "afternoon", "dusk", "night",
-            ], index=1)
-            brightness = st.selectbox("☀️ Luminosité", [
-                "daylight", "bright_with_incandescence",
-                "incandescent_glow", "dim_glow", "dark",
-            ])
-        with col_p2:
-            st.markdown("**🔥 Activité volcanique**")
-            lava_intensity = st.selectbox("🌡️ Intensité lave", [
-                "none", "low", "moderate", "high", "very_high",
-            ], help="Intensité de l'activité lavique visible")
-            viscosity = st.selectbox("💧 Viscosité", [
-                "low", "medium", "high",
-            ], index=1, help="Fluidité de la lave")
-            temperature = st.selectbox("🌡️ Température apparente", [
-                "low", "moderate", "high", "extreme",
-            ], index=1, help="Température visuelle de la lave")
-        with col_p3:
-            st.markdown("**🌤️ Environnement**")
-            weather = st.selectbox("☁️ Météo", [
-                "clear", "overcast", "hazy", "clear_night",
-            ])
-            eruption_type = st.selectbox("💥 Type éruption", [
-                "none", "effusive", "explosive", "phreatic",
-            ], help="Type d'activité éruptive")
-            plume = st.selectbox("🌫️ Panache", [
-                "none", "low", "medium", "high",
-            ], help="Panache volcanique visible")
-
-        slope_map = {
-            "Suki": "30deg_south", "Kalor": "25deg_west", "Kali": "35deg_east",
-        }
-        slope = slope_map.get(camera, "30deg_unknown")
-
-        # Aperçu du prompt NL riche
-        try:
-            from src.physics_prompts import build_rich_prompt
-            preview_prompt = build_rich_prompt(
-                camera=camera, time_of_day=time_of_day,
-                brightness=brightness, lava_intensity=lava_intensity,
-                slope=slope, weather=weather, viscosity=viscosity,
-                temperature=temperature, eruption_type=eruption_type,
-                plume=plume, template_index=0,
-            )
-        except ImportError:
-            preview_prompt = f"[Import error] camera={camera}, time={time_of_day}"
-
-        with st.expander("📝 Prompt NL généré (aperçu)", expanded=False):
-            st.code(preview_prompt, language="text")
-
-        # Seed aléatoire par défaut (CORRECTION: seed fixe → images identiques)
-        import random as _rng
-        _default_seed = _rng.randint(0, 2**31)
-        col_seed, col_steps = st.columns(2)
-        with col_seed:
-            phys_seed = st.number_input(
-                "🎲 Seed", min_value=0, max_value=2**31,
-                value=_default_seed, step=1,
-                help="Seed aléatoire à chaque refresh. Fixez pour reproduire.",
-            )
-        with col_steps:
-            phys_steps = st.slider(
-                "🔄 Steps", min_value=15, max_value=50, value=30,
-                help="Plus de steps = meilleure qualité mais plus lent",
-            )
-
-        if st.button("⚙️ Générer depuis paramètres physiques", type="primary", use_container_width=True):
-            if not backends:
-                st.info(
-                    f"**Prompt structuré** :\n\n*{preview_prompt[:200]}*\n\n"
-                    "Installez un backend de génération pour activer cette fonctionnalité."
-                )
-            else:
-                with st.spinner("Génération physique en cours…"):
-                    try:
-                        img = gen.generate_physics(
-                            camera=camera,
-                            time_of_day=time_of_day,
-                            brightness=brightness,
-                            lava_intensity=lava_intensity,
-                            slope=slope,
-                            weather=weather,
-                            viscosity=viscosity,
-                            temperature=temperature,
-                            eruption_type=eruption_type,
-                            plume=plume,
-                            model_name="Stable Diffusion 1.5",
-                            resolution="512×512",
-                            num_inference_steps=phys_steps,
-                            guidance_scale=10.0,
-                            seed=int(phys_seed),
-                            lora_path=_lora_path,
-                        )
-                        st.image(
-                            img,
-                            caption=(
-                                f"camera={camera} | time={time_of_day} | "
-                                f"lava={lava_intensity} | eruption={eruption_type} | "
-                                f"weather={weather}"
-                            ),
-                            **{_IMG_WIDTH_KW: True},
-                        )
-                    except Exception as e:
-                        st.error(f"Erreur : {e}")
-
-    # --- Tab 3 : Comparaison modèles ---
-    with tab_compare:
-        st.subheader("🔬 Comparaison VAE vs Modèles de diffusion")
-
-        col_v, col_d = st.columns(2)
-        with col_v:
-            st.markdown("""
-            ### VAE (Variational Autoencoder)
-            **Avantages**
-            - Espace latent structuré → contrôle paramétrique
-            - Entraînement plus rapide
-            - Lien naturel entre paramètres physiques et représentation latente
-            - Reconstruction fidèle si entraîné sur données volcaniques
-
-            **Limites**
-            - Qualité visuelle inférieure aux diffusions
-            - Images parfois floues
-            - Moins de diversité dans les générations
-
-            **Pertinence volcanologie** : ⭐⭐⭐⭐
-            *Idéal pour le lien paramètres → image*
-            """)
-
-        with col_d:
-            st.markdown("""
-            ### Modèles de diffusion
-            **Avantages**
-            - Meilleure qualité visuelle
-            - Excellentes capacités text-to-image
-            - Grande diversité des sorties
-            - Stable Diffusion : open-source, personnalisable
-
-            **Limites**
-            - Entraînement coûteux (GPU)
-            - Contrôle paramétrique moins direct
-            - Inférence plus lente
-            - Nécessite fine-tuning sur domaine volcanique
-
-            **Pertinence volcanologie** : ⭐⭐⭐⭐
-            *Idéal pour la génération réaliste text-to-image*
-            """)
-
-        st.markdown("---")
-        st.markdown("""
-        ### Recommandation
-        **Approche hybride** : utiliser un VAE pour la représentation paramétrique
-        (lien paramètres physiques → espace latent), puis un modèle de diffusion
-        pour la génération haute qualité (espace latent → image réaliste).
-
-        Cela combine le contrôle scientifique (VAE) avec la qualité visuelle (diffusion).
-        """)
-
-
-# ==============================================================
-# Page 6 — Simulation d'écoulements
+# Page 5 — Simulation d'écoulements
 # ==============================================================
 
 def page_simulation() -> None:
@@ -2111,29 +1686,39 @@ $$v = \frac{\rho g \sin(\alpha) \cdot h^2}{3 \mu}$$
             st.session_state["_sim_fig"] = _fig3d
 
     with col_viz:
+        # Toujours rendre st.plotly_chart — figure annotée si simulation pas encore lancée (anti-removeChild)
         if st.session_state.get("_sim_fig") is not None:
-            st.plotly_chart(
-                st.session_state["_sim_fig"],
-                use_container_width=True,
-                key="sim_3d_chart",
-            )
+            _sim_display_fig = st.session_state["_sim_fig"]
         else:
-            st.info("Ajustez les paramètres et cliquez sur **▶️ Lancer la simulation**.")
+            _sim_display_fig = go.Figure()
+            _sim_display_fig.add_annotation(
+                text="Ajustez les paramètres et cliquez sur ▶️ Lancer la simulation",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font=dict(size=13, color="gray"),
+            )
+            _sim_display_fig.update_layout(
+                height=500, xaxis_visible=False, yaxis_visible=False,
+                margin=dict(l=0, r=0, t=20, b=20),
+            )
+        st.plotly_chart(_sim_display_fig, use_container_width=True, key="sim_3d_chart")
 
-    # Métriques physiques calculées
-    if st.session_state.get("_sim_fig") is not None:
+    # Métriques physiques — toujours rendre st.columns(4) + métriques (anti-removeChild)
+    st.divider()
+    _sim_has_result = st.session_state.get("_sim_fig") is not None
+    if _sim_has_result:
         rho = 2500.0
         slope_rad = np.radians(slope)
         h = (volume * 1000 / 100.0) ** (1 / 3)
         v_front = rho * 9.81 * np.sin(slope_rad) * h**2 / (3 * viscosity_val)
         total_dist = min(v_front * duration * 3600, 10000)
-
-        st.divider()
-        mc1, mc2, mc3, mc4 = st.columns(4)
-        mc1.metric("Vitesse de front", f"{v_front:.3f} m/s")
-        mc2.metric("Distance parcourue", f"{total_dist/1000:.2f} km")
-        mc3.metric("Épaisseur estimée", f"{h:.1f} m")
-        mc4.metric("Durée simulée", f"{duration} h")
+        _mv, _dv, _ev, _dv2 = f"{v_front:.3f} m/s", f"{total_dist/1000:.2f} km", f"{h:.1f} m", f"{duration} h"
+    else:
+        _mv, _dv, _ev, _dv2 = "—", "—", "—", "—"
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    mc1.metric("Vitesse de front", _mv)
+    mc2.metric("Distance parcourue", _dv)
+    mc3.metric("Épaisseur estimée", _ev)
+    mc4.metric("Durée simulée", _dv2)
 
 
 def _run_flow_simulation_3d(
@@ -2339,32 +1924,38 @@ def page_statistiques(df: pd.DataFrame) -> None:
             st.pyplot(fig)
             plt.close(fig)
 
-        # Par heure
+        # Par heure — toujours rendre st.pyplot (anti-removeChild)
+        fig_hr2, ax_hr2 = plt.subplots(figsize=(10, 3))
         if df["hour"].notna().any():
             hour_counts = df.groupby("hour").size()
-            fig, ax = plt.subplots(figsize=(10, 3))
-            ax.bar(hour_counts.index.astype(int), hour_counts.values, color="#2ecc71", edgecolor="white")
-            ax.set_xlabel("Heure UTC")
-            ax.set_ylabel("Images")
-            ax.set_title("Distribution horaire")
-            ax.set_xticks(range(0, 24))
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
+            ax_hr2.bar(hour_counts.index.astype(int), hour_counts.values, color="#2ecc71", edgecolor="white")
+            ax_hr2.set_xlabel("Heure UTC")
+            ax_hr2.set_ylabel("Images")
+            ax_hr2.set_title("Distribution horaire")
+            ax_hr2.set_xticks(range(0, 24))
+        else:
+            ax_hr2.text(0.5, 0.5, "Aucune donnée horaire disponible",
+                        ha="center", va="center", transform=ax_hr2.transAxes, fontsize=12, color="gray")
+            ax_hr2.set_axis_off()
+        plt.tight_layout()
+        st.pyplot(fig_hr2)
+        plt.close(fig_hr2)
 
     with tab_quality:
         st.subheader("Répartition par qualité")
 
-        if df["quality_flag"].notna().any():
-            col_qp, col_qy = st.columns(2)
+        # Toujours rendre st.columns(2) — figures annotées si pas de données (anti-removeChild)
+        _stat_has_quality = df["quality_flag"].notna().any()
+        colors_q = {
+            "usable": "#2ecc71", "dark": "#34495e",
+            "cloudy": "#95a5a6", "corrupted": "#e74c3c", "unknown": "#f39c12",
+        }
+        col_qp, col_qy = st.columns(2)
 
-            with col_qp:
+        with col_qp:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            if _stat_has_quality:
                 qcounts = df["quality_flag"].value_counts()
-                colors_q = {
-                    "usable": "#2ecc71", "dark": "#34495e",
-                    "cloudy": "#95a5a6", "corrupted": "#e74c3c", "unknown": "#f39c12",
-                }
-                fig, ax = plt.subplots(figsize=(6, 4))
                 bars = ax.bar(
                     qcounts.index, qcounts.values,
                     color=[colors_q.get(q, "#3498db") for q in qcounts.index],
@@ -2375,51 +1966,55 @@ def page_statistiques(df: pd.DataFrame) -> None:
                             str(int(b.get_height())), ha="center", fontsize=9)
                 ax.set_ylabel("Nombre d'images")
                 ax.set_title("Qualité globale")
-                plt.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
+            else:
+                ax.text(0.5, 0.5, "Classification qualité\nnon disponible\n(Phase 3 non exécutée)",
+                        ha="center", va="center", transform=ax.transAxes, fontsize=10, color="gray")
+                ax.set_axis_off()
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
 
-            with col_qy:
-                # Qualité par année
+        with col_qy:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            if _stat_has_quality and df["year"].notna().any():
                 cross = pd.crosstab(df["year"].dropna().astype(int), df["quality_flag"])
-                fig, ax = plt.subplots(figsize=(8, 4))
                 cross.plot(kind="bar", stacked=True, ax=ax,
                           color=[colors_q.get(c, "#3498db") for c in cross.columns])
                 ax.set_xlabel("Année")
                 ax.set_ylabel("Nombre d'images")
                 ax.set_title("Qualité par année")
                 ax.legend(fontsize=8, bbox_to_anchor=(1, 1))
-                plt.tight_layout()
-                st.pyplot(fig)
-                plt.close(fig)
-        else:
-            st.info(
-                "Pas de classification qualité disponible.\n\n"
-                "La classification est effectuée en Phase 3 du pipeline "
-                "sur les images téléchargées et prétraitées."
-            )
-
-    with tab_files:
-        st.subheader("Tailles de fichiers")
-        sizes = df["file_size_bytes"].dropna()
-        if not sizes.empty:
-            fig, ax = plt.subplots(figsize=(10, 3))
-            ax.hist(sizes / 1024, bins=50, edgecolor="white", alpha=0.8, color="#9b59b6")
-            ax.set_xlabel("Taille (Ko)")
-            ax.set_ylabel("Fréquence")
-            ax.set_title(f"Distribution — µ={sizes.mean()/1024:.0f} Ko, σ={sizes.std()/1024:.0f} Ko")
-            ax.axvline(sizes.mean() / 1024, color="red", ls="--", label=f"Moyenne")
-            ax.legend(fontsize=8)
+            else:
+                ax.text(0.5, 0.5, "Données insuffisantes",
+                        ha="center", va="center", transform=ax.transAxes, fontsize=11, color="gray")
+                ax.set_axis_off()
             plt.tight_layout()
             st.pyplot(fig)
             plt.close(fig)
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Taille totale", f"{sizes.sum() / 1e6:.1f} Mo")
-            c2.metric("Taille moyenne", f"{sizes.mean() / 1024:.0f} Ko")
-            c3.metric("Taille max", f"{sizes.max() / 1024:.0f} Ko")
+    with tab_files:
+        st.subheader("Tailles de fichiers")
+        sizes = df["file_size_bytes"].dropna()
+        # Toujours rendre st.pyplot + st.columns(3) + métriques (anti-removeChild)
+        fig, ax = plt.subplots(figsize=(10, 3))
+        if not sizes.empty:
+            ax.hist(sizes / 1024, bins=50, edgecolor="white", alpha=0.8, color="#9b59b6")
+            ax.set_xlabel("Taille (Ko)")
+            ax.set_ylabel("Fréquence")
+            ax.set_title(f"Distribution — µ={sizes.mean()/1024:.0f} Ko, σ={sizes.std()/1024:.0f} Ko")
+            ax.axvline(sizes.mean() / 1024, color="red", ls="--", label="Moyenne")
+            ax.legend(fontsize=8)
         else:
-            st.info("Pas de données de taille.")
+            ax.text(0.5, 0.5, "Pas de données de taille de fichier",
+                    ha="center", va="center", transform=ax.transAxes, fontsize=12, color="gray")
+            ax.set_axis_off()
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Taille totale",  f"{sizes.sum() / 1e6:.1f} Mo"   if not sizes.empty else "—")
+        c2.metric("Taille moyenne", f"{sizes.mean() / 1024:.0f} Ko" if not sizes.empty else "—")
+        c3.metric("Taille max",     f"{sizes.max() / 1024:.0f} Ko"  if not sizes.empty else "—")
 
     with tab_progress:
         st.subheader("Progression du pipeline")
@@ -2648,34 +2243,26 @@ def page_a_propos() -> None:
     | **🔍 Exploration** | Navigation chronologique des images | Index + images raw |
     | **⚠️ Anomalies** | Top images anormales (baselines + PatchCore) | Scores CSV |
     | **🖼️ Galerie** | Grille d'images raw vs prétraitées | Images raw/processed |
-    | **🤖 Génération IA** | Génération text-to-image et LoRA | LoRA checkpoints |
-    | **🌋 Simulation** | Modèle d'écoulements de lave 2D | — |
+    | **🌋 Simulation** | Modèle d'écoulements de lave 3D | — |
     | **📊 Statistiques** | Distributions, EDA, corrélations | Index + scores |
     | **📖 À propos** | Cette page | — |
     | **🔬 DINOv2 + PatchCore** | Scores sémantiques, cartes d'attention | patchcore_scores.csv |
     | **⚡ Early Warning** | Signal précurseur avant événements BPPTKG | patchcore_scores.csv + events CSV |
-    | **🧪 Analyse avancée** | Reconstruction img2img + carte d'anomalie | Images + LoRA optionnel |
+    | **🧪 Analyse avancée** | Reconstruction img2img + carte d'anomalie | Images |
     | **🌋 Analyse volcanique avancée** | Classification, heatmap, timeline | patchcore_scores.csv |
 
     ---
 
-    ### 🧪 Analyse avancée — Reconstruction diffusion
+    ### 🧪 Analyse avancée — Reconstruction par différence
 
-    **Principe** : reconstruction img2img via Stable Diffusion 1.5.
-    1. L'image réelle est encodée dans l'espace latent (VAE).
-    2. Du bruit est ajouté selon `strength` (0.1–0.7).
-    3. Le modèle débruite vers une image "volcan normal" (prompt guidé).
-    4. La différence |original − reconstruit| = **carte d'anomalie**.
+    **Principe** : reconstruction par différence d'image pour isoler les zones suspectes.
+    1. L'image réelle est chargée.
+    2. Une reconstruction "normale" est générée (SD 1.5 si disponible, sinon flou gaussien).
+    3. La différence |original − reconstruit| = **carte d'anomalie**.
 
     **Backend** :
     - `diffusers` disponible → SD 1.5 complet (~20–40s/image sur MPS, ~5s sur GPU)
     - Sinon → fallback flou gaussien (~instantané, résultats indicatifs)
-
-    **Cache** : le pipeline SD 1.5 est chargé une seule fois en mémoire (session_state).
-    Les paramètres `strength` et `LoRA` invalident le cache automatiquement.
-
-    **LoRA volcanique** : si un modèle LoRA est présent dans `outputs/lora_merapi_*/`,
-    il est chargé pour améliorer le réalisme des reconstructions de volcans.
 
     ---
 
@@ -3240,20 +2827,33 @@ def page_patchcore(df: pd.DataFrame, config: dict) -> None:
                 _cl_display = st.container()
                 with _cl_display:
                     if st.session_state.get("_cl_error"):
-                        st.error(f"Erreur PCA : {st.session_state['_cl_error']}")
+                        # Erreur : toujours rendre un chart avec l'erreur en annotation (anti-removeChild)
+                        _fig_err = go.Figure()
+                        _fig_err.add_annotation(
+                            text=f"❌ {st.session_state['_cl_error']}",
+                            xref="paper", yref="paper", x=0.5, y=0.5,
+                            showarrow=False, font=dict(size=12, color="#e74c3c"),
+                        )
+                        _fig_err.update_layout(height=350, xaxis_visible=False, yaxis_visible=False)
+                        st.plotly_chart(_fig_err, use_container_width=True, key="cl_pca_error_chart")
                     elif st.session_state.get("_cl_result") is not None:
                         st.plotly_chart(
                             st.session_state["_cl_result"],
                             use_container_width=True,
-                            key="cl_plotly_chart",
+                            key="cl_pca_result_chart",
                         )
                         if st.session_state.get("_cl_caption"):
                             st.caption(st.session_state["_cl_caption"])
                     else:
-                        st.info(
-                            "Cliquez sur **🔍 Visualiser** pour afficher la projection PCA du coreset. "
-                            "Sélectionnez une image pour voir où ses patches se positionnent dans cet espace."
+                        # Pas encore lancé : toujours rendre un chart avec instruction (anti-removeChild)
+                        _fig_hint = go.Figure()
+                        _fig_hint.add_annotation(
+                            text="Cliquez sur 🔍 Visualiser pour afficher la projection PCA du coreset.",
+                            xref="paper", yref="paper", x=0.5, y=0.5,
+                            showarrow=False, font=dict(size=13, color="gray"),
                         )
+                        _fig_hint.update_layout(height=350, xaxis_visible=False, yaxis_visible=False)
+                        st.plotly_chart(_fig_hint, use_container_width=True, key="cl_pca_hint_chart")
             except Exception as exc_npz:
                 st.error(f"Erreur de chargement du coreset : {exc_npz}")
 
@@ -3364,70 +2964,54 @@ def page_patchcore(df: pd.DataFrame, config: dict) -> None:
 # Page 10 — Timeline PatchCore interactive
 # ==============================================================
 
+_TIMELINE_SCRIPT = PROJECT_ROOT / "outputs" / "figures" / "plot_patchcore_timeline_interactive.py"
 _TIMELINE_HTML_PATH = PROJECT_ROOT / "outputs" / "figures" / "patchcore_timeline_interactive.html"
 
 
-@st.cache_data(show_spinner=False)
-def _load_html_timeline(mtime: float) -> str:  # noqa: ARG001
-    """Charge le HTML du graphique interactif et le met en cache.
-
-    Le paramètre `mtime` (date de modification du fichier) sert de clé de
-    cache : toute modification du fichier invalide automatiquement le cache
-    sans nécessiter d'appel explicite à st.cache_data.clear().
+@st.cache_data(show_spinner=False, ttl=600)
+def _build_timeline_figure(data_mtime: float) -> tuple:  # noqa: ARG001
     """
-    return _TIMELINE_HTML_PATH.read_text(encoding="utf-8")
+    Construit la figure Plotly de la timeline PatchCore.
 
-
-def load_html_timeline(force_reload: bool = False) -> str | None:
-    """Wrapper public : retourne le contenu HTML ou None si le fichier est absent.
-
-    Args:
-        force_reload: si True, invalide le cache avant la lecture
-                      (utilisé par le bouton « Rafraîchir »).
+    Le paramètre data_mtime (timestamp de l'index CSV) sert de clé de cache :
+    toute modification des données invalide automatiquement la figure.
 
     Returns:
-        Contenu HTML (str) ou None.
+        (fig, is_synthetic, n_images)
     """
-    if not _TIMELINE_HTML_PATH.exists():
-        return None
-    if force_reload:
-        _load_html_timeline.clear()
-    mtime = _TIMELINE_HTML_PATH.stat().st_mtime
-    return _load_html_timeline(mtime)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_plot_tl", str(_TIMELINE_SCRIPT))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    df = mod.load_data()
+    is_synth = df is None
+    if is_synth:
+        df = mod.synthetic_data()
+    return mod.build_figure(df, is_synth), is_synth, len(df)
 
 
 def page_timeline_patchcore() -> None:
-    """Page dédiée à la timeline interactive PatchCore (HTML Plotly embarqué)."""
-    import streamlit.components.v1 as components
-    from datetime import datetime
-
+    """Page dédiée à la timeline interactive PatchCore."""
     st.title("📊 Timeline interactive des anomalies PatchCore")
     st.markdown(
         "Exploration visuelle des **scores d'anomalie PatchCore** sur l'ensemble "
-        "des images du Merapi (2014–2025). Le graphique est généré par Plotly et "
-        "embarqué ici sous forme de page HTML interactive."
+        "des images du Merapi (2014–2025). Filtrage dynamique par **année** et "
+        "par **mois** via les dropdowns du graphique."
     )
 
     # ── Barre d'information ──────────────────────────────────────────────────
     st.info(
         "**Comment utiliser les filtres ?**\n\n"
-        "- 📅 **Dropdown Année** (haut gauche du graphique) : restreint "
-        "l'axe temporel à l'année choisie. Les points hors de la plage "
-        "disparaissent.\n"
-        "- 📆 **Dropdown Mois** (haut centre) : masque les traces des "
-        "autres mois — seules les images du mois sélectionné restent "
-        "visibles.\n"
-        "- **Combinaison** : choisir *2018* + *Mai* affiche uniquement "
-        "les images de mai 2018.\n"
-        "- ↺ **Reset** (haut droite) : réinitialise simultanément les deux "
-        "filtres.\n"
-        "- **Rangeslider** (barre sous le graphique) : sélection libre d'une "
-        "plage de dates.\n"
-        "- 📷 **Export PNG** : bouton dans la barre d'outils Plotly (icône "
-        "appareil photo)."
+        "- 📅 **Dropdown Année** (haut gauche) : restreint l'axe temporel à "
+        "l'année choisie.\n"
+        "- 📆 **Dropdown Mois** (haut centre) : masque les autres mois.\n"
+        "- **Combinaison** : *2018* + *Mai* → uniquement mai 2018.\n"
+        "- ↺ **Reset** (haut droite) : réinitialise les deux filtres.\n"
+        "- **Rangeslider** (barre sous le graphique) : sélection libre.\n"
+        "- 📷 **Export PNG** : icône appareil photo dans la barre d'outils Plotly."
     )
 
-    # ── Seuil P90 & légende qualité ──────────────────────────────────────────
+    # ── Légende et seuils ───────────────────────────────────────────────────
     with st.expander("ℹ️ Légende et seuils", expanded=False):
         col_l, col_r = st.columns(2)
         with col_l:
@@ -3443,64 +3027,64 @@ def page_timeline_patchcore() -> None:
         with col_r:
             st.markdown(
                 "**Seuil P90 = 49.975**\n\n"
-                "Un score **supérieur au P90** (90e percentile de la distribution "
-                "complète) signale une image statistiquement anormale. "
-                "Lors de l'éruption de mai 2018, une proportion inhabituellement "
-                "élevée d'images dépasse ce seuil.\n\n"
+                "Un score **supérieur au P90** (90e percentile) signale une image "
+                "statistiquement anormale. Lors de l'éruption de mai 2018, une "
+                "proportion inhabituellement élevée d'images dépasse ce seuil.\n\n"
                 "**Ligne jaune** = moyenne mensuelle des scores.\n\n"
-                "**Lignes verticales** = événements volcaniques ou météo annotés."
+                "**Lignes verticales** = événements volcaniques annotés."
             )
 
     st.markdown("---")
 
-    # ── Bouton rafraîchir + info dernière mise à jour ────────────────────────
+    # ── Bouton rafraîchir ────────────────────────────────────────────────────
     col_btn, col_info = st.columns([1, 4])
-    force_reload = False
     with col_btn:
-        if st.button("🔄 Rafraîchir le graphique", key="btn_refresh_timeline"):
-            force_reload = True
-    with col_info:
-        if _TIMELINE_HTML_PATH.exists():
-            mtime_dt = datetime.fromtimestamp(_TIMELINE_HTML_PATH.stat().st_mtime)
-            st.caption(
-                f"Dernière mise à jour du graphique : "
-                f"**{mtime_dt.strftime('%d/%m/%Y à %H:%M')}**"
-            )
-        else:
-            st.caption("Fichier HTML non disponible.")
+        if st.button("🔄 Rafraîchir", key="btn_refresh_timeline"):
+            _build_timeline_figure.clear()
+            st.rerun()
 
-    st.markdown("")
-
-    # ── Chargement et rendu ─────────────────────────────────────────────────
-    html_content = load_html_timeline(force_reload=force_reload)
-
-    if html_content is None:
+    # ── Vérification du script de génération ────────────────────────────────
+    if not _TIMELINE_SCRIPT.exists():
         st.error(
-            "⚠️ Le fichier HTML du graphique interactif est introuvable.\n\n"
-            f"**Chemin attendu :** `{_TIMELINE_HTML_PATH}`\n\n"
-            "Pour le générer, lancez dans un terminal (depuis le dossier "
-            "`merapi_anomaly/`) :\n\n"
-            "```bash\n"
-            "/opt/anaconda3/bin/python outputs/figures/plot_patchcore_timeline_interactive.py\n"
-            "```"
+            "⚠️ Script de génération introuvable.\n\n"
+            f"Chemin attendu : `{_TIMELINE_SCRIPT}`"
         )
         return
 
-    # Hauteur fixe : graphique (680 px) + rangeslider + marges
-    # scrolling=True évite le bug React "removeChild" lors du redimensionnement
-    # (le composant se redimensionne via sa propre scrollbar plutôt que de
-    # modifier le DOM parent, ce qui empêche les conflits avec React).
-    with st.container():
-        components.html(html_content, height=760, scrolling=True)
+    # ── Clé de cache : timestamp de l'index CSV (ou 0 si absent) ────────────
+    _idx_csv = PROJECT_ROOT / "data" / "index" / "index.csv"
+    _data_mtime = _idx_csv.stat().st_mtime if _idx_csv.exists() else 0.0
 
-    # ── Lien de téléchargement ───────────────────────────────────────────────
-    st.download_button(
-        label="⬇️ Télécharger le graphique HTML",
-        data=html_content.encode("utf-8"),
-        file_name="patchcore_timeline_interactive.html",
-        mime="text/html",
-        key="dl_timeline_html",
-    )
+    # ── Construction de la figure (cachée) ──────────────────────────────────
+    try:
+        fig_tl, is_synthetic, n_images = _build_timeline_figure(_data_mtime)
+    except Exception as exc:
+        st.error(f"Erreur lors de la génération du graphique : {exc}")
+        return
+
+    with col_info:
+        label = "synthétiques" if is_synthetic else "réelles"
+        st.caption(f"{n_images:,} images {label}")
+
+    if is_synthetic:
+        st.warning(
+            "⚠️ **Données synthétiques** — `data/index/index.csv` ne contient pas "
+            "de colonne `patchcore_score`. Lancez d'abord :\n\n"
+            "```bash\npython run_v1_pipeline.py --step patchcore\n```"
+        )
+
+    # ── Affichage via st.plotly_chart (pas d'iframe/CDN) ────────────────────
+    st.plotly_chart(fig_tl, use_container_width=True, key="timeline_patchcore_main")
+
+    # ── Téléchargement HTML (optionnel) ─────────────────────────────────────
+    if _TIMELINE_HTML_PATH.exists():
+        st.download_button(
+            label="⬇️ Télécharger le graphique HTML",
+            data=_TIMELINE_HTML_PATH.read_bytes(),
+            file_name="patchcore_timeline_interactive.html",
+            mime="text/html",
+            key="dl_timeline_html",
+        )
 
 
 # ==============================================================
@@ -3723,7 +3307,16 @@ Survolez les points pour voir le détail (événement, date, ratio exact).
             )
             st.plotly_chart(fig_ew, use_container_width=True, key="ew_ratio_plotly")
         else:
-            st.info("Données de précurseurs incomplètes (colonnes lead_days ou event_date manquantes).")
+            # Toujours rendre st.plotly_chart — figure annotée si données manquantes (anti-removeChild)
+            _fig_ew_empty = go.Figure()
+            _fig_ew_empty.add_annotation(
+                text="Données de précurseurs incomplètes<br>(colonnes lead_days ou event_date manquantes)",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font=dict(size=13, color="gray"),
+            )
+            _fig_ew_empty.update_layout(height=440, xaxis_visible=False, yaxis_visible=False,
+                                        margin=dict(t=55, b=55))
+            st.plotly_chart(_fig_ew_empty, use_container_width=True, key="ew_ratio_empty_chart")
 
     # ─── Permutation test ─────────────────────────────────────────────────
     st.divider()
@@ -3764,10 +3357,12 @@ significativement plus élevé que ce qu'on obtient avec des dates aléatoires.
                 c3.metric("p-value", f"{p_val:.4f}",
                           delta="✓ significatif" if p_val < 0.05 else "✗ non significatif",
                           delta_color="normal" if p_val < 0.05 else "off")
-                if p_val < 0.05:
-                    st.success(f"✅ Signal précurseur **statistiquement significatif** (p={p_val:.4f} < 0.05)")
-                else:
-                    st.info(f"ℹ️ Signal non-significatif au seuil 0.05 (p={p_val:.4f}) — plus de données nécessaires.")
+                # st.caption stable (anti-removeChild) — jamais alterner st.success/st.info
+                st.caption(
+                    f"✅ Signal précurseur **statistiquement significatif** (p={p_val:.4f} < 0.05)"
+                    if p_val < 0.05 else
+                    f"ℹ️ Signal non-significatif au seuil 0.05 (p={p_val:.4f}) — plus de données nécessaires."
+                )
 
                 # Histogramme distribution nulle (Plotly)
                 if "null_distribution" in perm_filtered.columns:
@@ -4049,15 +3644,12 @@ def page_analyse_avancee(df: pd.DataFrame, config: dict) -> None:
                 m2.metric("Diff. max (%)", f"{_diff_vals.max()*100:.1f}")
                 m3.metric("Diff. P95 (%)", f"{np.percentile(_diff_vals, 95)*100:.1f}")
 
-            if backend == "fallback":
-                st.info(
-                    "Mode **fallback** activé (diffusers non disponible). "
-                    "La reconstruction utilise un flou gaussien → résultats indicatifs. "
-                    "Pour la reconstruction SD 1.5 complète : "
-                    "`pip install diffusers transformers accelerate`"
-                )
-            else:
-                st.success(f"Reconstruction SD 1.5 via **{backend}**.")
+            # st.caption stable — jamais alterner st.info / st.success (anti-removeChild)
+            st.caption(
+                "⚠️ Mode fallback (diffusers non disponible) — reconstruction via flou gaussien, résultats indicatifs."
+                if backend == "fallback" else
+                f"✅ Reconstruction SD 1.5 via **{backend}**."
+            )
 
             # ── Sauvegarde (checkbox définie avant le bouton, stable) ─────
             if save_figs:
@@ -4087,24 +3679,28 @@ def page_analyse_avancee(df: pd.DataFrame, config: dict) -> None:
         score_c2 = "patchcore_score" if "patchcore_score" in df.columns else "anomaly_score"
         df_s2 = df[df[score_c2].notna()].copy()
 
+        # Toujours rendre st.pyplot — figure annotée si pas de scores (anti-removeChild)
+        fig, ax = plt.subplots(figsize=(10, 3))
         if df_s2.empty:
-            st.info("Aucun score d'anomalie disponible.")
+            ax.text(0.5, 0.5, "Aucun score d'anomalie disponible",
+                    ha="center", va="center", transform=ax.transAxes, fontsize=12, color="gray")
+            ax.set_axis_off()
         else:
             # Distribution PatchCore
-            fig, ax = plt.subplots(figsize=(10, 3))
-            ax.hist(df_s2[score_c2], bins=50, edgecolor="white", alpha=0.8, color="#9b59b6")
             p90 = float(df_s2[score_c2].quantile(0.90))
             p95 = float(df_s2[score_c2].quantile(0.95))
+            ax.hist(df_s2[score_c2], bins=50, edgecolor="white", alpha=0.8, color="#9b59b6")
             ax.axvline(p90, color="#e67e22", ls="--", lw=1.5, label=f"P90 ({p90:.3f})")
             ax.axvline(p95, color="#e74c3c", ls="--", lw=2, label=f"P95 ({p95:.3f})")
             ax.set_xlabel("Score PatchCore")
             ax.set_ylabel("Fréquence")
             ax.set_title("Distribution des scores d'anomalie — seuils percentiles")
             ax.legend(fontsize=9)
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
 
+        if not df_s2.empty:
             # Scatter year × score
             if "year" in df_s2.columns and df_s2["year"].notna().any():
                 st.markdown("**Score par année**")
@@ -4748,8 +4344,12 @@ classification définitive. Toujours croiser avec les bulletins BPPTKG.
         col_a1.metric("Accord heuristique/modèle", _agree_label)
         col_a2.metric("Désaccords", _disagree_count)
 
-        if df_comp.empty:
-            st.info("Cliquez sur **▶️ Comparer** pour lancer l'analyse de la période sélectionnée.")
+        # st.caption stable — jamais un st.info conditionnel entre widgets structuraux (anti-removeChild)
+        st.caption(
+            "Cliquez sur ▶️ Comparer pour lancer l'analyse de la période sélectionnée."
+            if df_comp.empty else
+            f"Analyse effectuée — {len(df_comp):,} images comparées."
+        )
 
         st.divider()
         col_h, col_m = st.columns(2)
@@ -4902,11 +4502,9 @@ def main() -> None:
         page_analyse_volcanique(df, config)
     elif page == PAGES[8]:          # Analyse avancée
         page_analyse_avancee(df, config)
-    elif page == PAGES[9]:          # Génération IA
-        page_generation_ia()
-    elif page == PAGES[10]:         # Simulation
+    elif page == PAGES[9]:          # Simulation
         page_simulation()
-    elif page == PAGES[11]:         # À propos (toujours en dernier)
+    elif page == PAGES[10]:         # À propos (toujours en dernier)
         page_a_propos()
 
 

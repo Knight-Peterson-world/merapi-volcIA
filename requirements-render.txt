@@ -1,7 +1,7 @@
 # ============================================================
-# requirements-render.txt — dépendances pour Render
-# NE PAS inclure torch/diffusers/transformers (trop lourd)
-# La section "Génération IA" est désactivée en production.
+# requirements-render.txt — dépendances pour Streamlit Community Cloud
+# Détection d'anomalies volcanique uniquement (PatchCore, DINOv2, dashboards)
+# Pas de Stable Diffusion / LoRA / diffusers / transformers
 # ============================================================
 
 # --- Web ---
@@ -25,17 +25,17 @@ pyyaml>=6.0.1
 loguru>=0.7.2
 python-dateutil>=2.9.0
 
-# --- Scraping (utilisé par certaines pages) ---
+# --- Scraping (certaines pages) ---
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=5.1.0
 
-# --- Torch CPU uniquement (PatchCore + DINOv2 inference) ---
-# Render ne fournit pas de GPU. On force la variante CPU.
-# torch==2.3.1+cpu est disponible via le wheel index PyTorch.
+# --- Torch CPU uniquement (PatchCore + DINOv2 inférence) ---
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.3.1+cpu
 torchvision==0.18.1+cpu
 
 # open-clip requis par DINOv2 feature extraction
 open-clip-torch>=2.24.0
+# transformers<5.0 : DINOv2 AutoModel (attention_maps.py) — transformers>=5 casse open-clip
+transformers>=4.44.0,<5.0

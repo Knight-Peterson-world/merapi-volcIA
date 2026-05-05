@@ -1,6 +1,6 @@
 # ============================================================
 # Merapi Anomaly Detection — requirements.txt
-# Environnement unifié : scraping + EDA + génération IA
+# Détection d'anomalies volcanique : scraping + EDA + PatchCore/DINOv2
 # Compatible Apple Silicon (M1/M2) via MPS
 # ============================================================
 
@@ -25,36 +25,29 @@ pyyaml>=6.0.1
 tqdm>=4.66.0          # barres de progression
 python-dateutil>=2.9.0
 
-# --- Visualisation (EDA) ---
+# --- Visualisation ---
 matplotlib>=3.8.0
 seaborn>=0.13.0
 
-# --- Application prototype ---
+# --- Application ---
 streamlit>=1.35.0
 plotly>=5.18.0
+kaleido>=0.2.1        # export PNG/SVG depuis Plotly
 
 # --- Logging structuré ---
 loguru>=0.7.2
 
 # ============================================================
-# V1 — DINOv2 + PatchCore + SVM (ajouts)
+# V1 — DINOv2 + PatchCore + SVM
 # ============================================================
 scikit-learn>=1.4.0   # SVM, AUC-PR, F1, StratifiedKFold
 scipy>=1.12.0         # mannwhitneyu (permutation test)
 
 # ============================================================
-# Génération IA — backends locaux
-# IMPORTANT : transformers < 5.0 est OBLIGATOIRE.
-# transformers >= 5.0 casse diffusers (bug Placeholder/LazyModule).
+# Torch — inférence DINOv2 / PatchCore (pas de génération SD)
 # ============================================================
 torch>=2.4.0
 torchvision>=0.19.0
-diffusers>=0.28.0,<1.0
-transformers>=4.44.0,<5.0
-accelerate>=0.33.0
-safetensors>=0.4.0
-open-clip-torch>=2.24.0   # requis pour Stable Diffusion 2.1
-
-# --- Backend cloud (optionnel) ---
-# pip install openai
-# export OPENAI_API_KEY='sk-...'
+open-clip-torch>=2.24.0   # features DINOv2 / CLIP
+# transformers<5.0 obligatoire : transformers>=5 casse open-clip-torch (LazyModule bug)
+transformers>=4.44.0,<5.0  # DINOv2 via AutoModel (attention_maps.py)

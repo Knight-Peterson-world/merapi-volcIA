@@ -1,22 +1,23 @@
 # .gitignore — Merapi Anomaly Detection
 
-# Images (386 MB — non versionnées, ephémères sur Render)
+# Images (386 MB — non versionnées, éphémères sur Streamlit Cloud)
 data/raw/
 data/processed/
 
-# Index backups
+# Index backups (garder uniquement index.csv principal)
 data/index/index*.csv
 !data/index/index.csv
 
-# Modèles lourds (LoRA / SD)
+# Outputs LoRA (supprimés du projet — voir historique git si besoin)
 outputs/lora_merapi/
 outputs/lora_merapi_physics/
 outputs/lora_merapi_results/
 outputs/generated/
 
-# Garder : index.csv, patchcore.npz, scores
+# Garder : index.csv, patchcore.npz, scores CSV, figures PNG/HTML
 # outputs/models/patchcore.npz  → versionné (17 MB, dans la limite GitHub 100 MB)
 # outputs/scores/               → versionné (3 MB)
+# outputs/figures/              → versionné (PNG + HTML interactif timeline)
 
 # Python
 __pycache__/
@@ -40,6 +41,3 @@ logs/
 
 # Zips
 *.zip
-
-# Docs HTML
-*.html
