@@ -1,0 +1,45 @@
+# .gitignore — Merapi Anomaly Detection
+
+# Images (386 MB — non versionnées, ephémères sur Render)
+data/raw/
+data/processed/
+
+# Index backups
+data/index/index*.csv
+!data/index/index.csv
+
+# Modèles lourds (LoRA / SD)
+outputs/lora_merapi/
+outputs/lora_merapi_physics/
+outputs/lora_merapi_results/
+outputs/generated/
+
+# Garder : index.csv, patchcore.npz, scores
+# outputs/models/patchcore.npz  → versionné (17 MB, dans la limite GitHub 100 MB)
+# outputs/scores/               → versionné (3 MB)
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# IDE
+.DS_Store
+.vscode/
+*.code-workspace
+
+# Logs
+logs/
+*.log
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Zips
+*.zip
+
+# Docs HTML
+*.html

@@ -1,0 +1,12 @@
+date,type,intensity,source,description
+2018-05-11,phreatic_eruption,major,BPPTKG,Éruption phréatique colonne 5700m alert AWAS
+2018-05-13,phreatomagmatic_eruption,major,BPPTKG,Éruption phréatomagmatique flux pyroclastiques
+2018-05-22,lava_dome_activity,moderate,BPPTKG,Activité dôme post-éruptive
+2018-06-01,lava_dome_activity,moderate,BPPTKG,Reprise activité dôme juin 2018
+2017-05-11,lava_dome_activity,minor,BPPTKG,Activité dôme mai 2017
+2017-06-01,lava_flow,minor,BPPTKG,Coulée lave courte flanc SW
+2016-10-01,dome_activity,moderate,BPPTKG,Activité dôme accrue oct 2016 inflation GPS
+2016-11-01,dome_activity,moderate,BPPTKG,Activité dôme nov 2016
+2015-11-01,seismic_swarm,minor,BPPTKG,Essaim sismique nov 2015
+2014-11-01,post_eruptive_activity,moderate,BPPTKG,Activité post-éruptive coulées pyroclastiques
+2014-12-01,lava_dome_activity,minor,BPPTKG,Activité dôme décembre 2014

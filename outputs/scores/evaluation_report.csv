@@ -1,0 +1,2 @@
+auc_pr_baseline,auc_pr_patchcore,auc_roc_patchcore,delta_auc_pr,improvement_pct,f1_macro_evaluate,f1_anomaly,f1_normal,f1_macro_triage,f1_volcanic,f1_weather,mann_whitney_p,effect_size,n_train,n_test,n_positive_proxy
+0.07186973610331275,0.13144714639029387,0.7119489186327889,0.05957741028698112,82.89638103211982,0.491418717943829,0.04778156996587031,0.9350558659217877,0.5,1.0,0.0,6.20710719621024e-16,0.4238978372655777,3493,328,128

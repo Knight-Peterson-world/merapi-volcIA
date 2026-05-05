@@ -1,0 +1,16 @@
+VolcanoClassifier — Rapport d'entraînement
+============================================================
+Données : 4231 images (auto-labels)
+Features : ['optical_flow_mag', 'lbp_entropy', 'bright_pixel_ratio', 'contour_convexity', 'pixel_diff_mean', 'thermal_gradient', 'bright_zone_area', 'texture_roughness', 'edge_density', 'temporal_change_score', 'patchcore_score']
+
+               precision    recall  f1-score   support
+
+         lave       0.99      1.00      0.99      2716
+       normal       1.00      0.98      0.99      1474
+        nuage       1.00      1.00      1.00         5
+pyroclastique       1.00      1.00      1.00        36
+
+     accuracy                           0.99      4231
+    macro avg       1.00      0.99      1.00      4231
+ weighted avg       0.99      0.99      0.99      4231
+

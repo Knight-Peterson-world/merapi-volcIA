@@ -1,0 +1,133 @@
+# ============================================================
+# Merapi Anomaly Detection — settings.yaml
+# Configuration centrale du projet
+# ============================================================
+
+project:
+  name: merapi_anomaly
+  version: "0.1.0"
+  description: "Détection d'anomalies dans des séries d'images volcaniques — Merapi"
+
+# ----------------------------------------------------------
+# Source de données
+# ----------------------------------------------------------
+source:
+  base_url: "https://wwwobs.univ-bpclermont.fr/SO/televolc/stereovolc/data/domerapi"
+  volcano: "domerapi"
+
+  # Pattern des URLs mensuelles
+  # Exemple : {base_url}/{year}_{mm:02d}/{year}_{mon_abbr}.html
+  # Exemple concret : .../2014_11/2014_nov.html
+  month_abbrs:
+    1: jan
+    2: feb
+    3: mar
+    4: apr
+    5: may
+    6: jun
+    7: jul
+    8: aug
+    9: sep
+    10: oct
+    11: nov
+    12: dec
+
+  # Extensions d'images reconnues sur le site
+  image_extensions:
+    - .jpg
+    - .jpeg
+    - .JPG
+    - .JPEG
+
+  # Plage temporelle disponible (indicative — vérifier sur le site)
+  years_available:
+    start: 2014
+    end: 2025
+
+# ----------------------------------------------------------
+# Chemins locaux (relatifs à la racine du projet)
+# ----------------------------------------------------------
+paths:
+  data_raw: "data/raw"           # images téléchargées, jamais modifiées
+  data_processed: "data/processed"  # images prétraitées
+  data_index: "data/index"       # CSV / métadonnées
+  index_file: "data/index/index.csv"
+  outputs: "outputs"
+  figures: "outputs/figures"
+  scores: "outputs/scores"
+  reports: "outputs/reports"
+  models: "models"
+  logs: "logs"
+
+# ----------------------------------------------------------
+# Paramètres de scraping
+# ----------------------------------------------------------
+scraping:
+  # Délai entre requêtes (secondes) — respecter le serveur
+  request_delay_s: 1.5
+  request_timeout_s: 20
+
+  # Nombre de tentatives en cas d'échec réseau
+  max_retries: 3
+  retry_backoff_s: 5.0
+
+  # En-têtes HTTP (identification honnête)
+  user_agent: "MerapiAnomalyResearch/0.1 (contact: ton.email@univ.fr)"
+
+# ----------------------------------------------------------
+# Paramètres de téléchargement progressif
+# ----------------------------------------------------------
+download:
+  # Taille de lot par session de travail
+  batch_size: 50
+
+  # Délai entre téléchargements d'images (secondes)
+  image_delay_s: 0.5
+
+  # Vérification de l'intégrité (taille minimale fichier en octets)
+  min_file_size_bytes: 1000
+
+  # Re-télécharger les fichiers déjà présents ?
+  overwrite_existing: false
+
+  # Sous-dossier dans data/raw/ : {year}/{month:02d}/
+  # Exemple : data/raw/2014/11/
+
+# ----------------------------------------------------------
+# Paramètres de prétraitement image (préparation Phase 3)
+# ----------------------------------------------------------
+preprocessing:
+  # Résolution cible (pixels)
+  target_size: [256, 256]
+
+  # Normalisation : "minmax" ou "zscore"
+  normalization: "minmax"
+
+  # Séparation jour / nuit
+  # Seuil de luminosité moyenne [0–255] sous lequel → nuit
+  night_brightness_threshold: 30
+
+  # Détection d'image inutilisable (nuage, brouillard)
+  # Seuil de variance : image trop uniforme → probablement nuageuse/brouillard
+  cloud_variance_threshold: 50.0
+
+  # Région d'intérêt volcanique (ROI) — à affiner avec expertise volcanologique
+  # Format : [x_min, y_min, x_max, y_max] en pixels (None = image entière)
+  # Préparé mais non utilisé à ce stade ; à calibrer sur les images réelles
+  roi:
+    enabled: false
+    x_min: null
+    y_min: null
+    x_max: null
+    y_max: null
+
+# ----------------------------------------------------------
+# Logging
+# ----------------------------------------------------------
+logging:
+  level: "INFO"           # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_dir: "logs"
+  log_filename: "merapi_{date}.log"
+  rotation: "10 MB"       # rotation loguru
+  retention: "30 days"

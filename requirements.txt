@@ -1,0 +1,60 @@
+# ============================================================
+# Merapi Anomaly Detection — requirements.txt
+# Environnement unifié : scraping + EDA + génération IA
+# Compatible Apple Silicon (M1/M2) via MPS
+# ============================================================
+
+# --- Web scraping ---
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0           # parser HTML rapide pour BeautifulSoup
+
+# --- Data manipulation ---
+pandas>=2.1.0
+numpy>=1.26.0
+
+# --- Images ---
+Pillow>=10.2.0
+opencv-python-headless>=4.9.0  # sans GUI (serveur/colab-friendly)
+scikit-image>=0.22.0            # SSIM, métriques image
+
+# --- Configuration ---
+pyyaml>=6.0.1
+
+# --- Utilitaires ---
+tqdm>=4.66.0          # barres de progression
+python-dateutil>=2.9.0
+
+# --- Visualisation (EDA) ---
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# --- Application prototype ---
+streamlit>=1.35.0
+plotly>=5.18.0
+
+# --- Logging structuré ---
+loguru>=0.7.2
+
+# ============================================================
+# V1 — DINOv2 + PatchCore + SVM (ajouts)
+# ============================================================
+scikit-learn>=1.4.0   # SVM, AUC-PR, F1, StratifiedKFold
+scipy>=1.12.0         # mannwhitneyu (permutation test)
+
+# ============================================================
+# Génération IA — backends locaux
+# IMPORTANT : transformers < 5.0 est OBLIGATOIRE.
+# transformers >= 5.0 casse diffusers (bug Placeholder/LazyModule).
+# ============================================================
+torch>=2.4.0
+torchvision>=0.19.0
+diffusers>=0.28.0,<1.0
+transformers>=4.44.0,<5.0
+accelerate>=0.33.0
+safetensors>=0.4.0
+open-clip-torch>=2.24.0   # requis pour Stable Diffusion 2.1
+
+# --- Backend cloud (optionnel) ---
+# pip install openai
+# export OPENAI_API_KEY='sk-...'
